@@ -1,37 +1,10 @@
-<?php
-// insert your patreon webhook secret here!
-$secret_webhook_id = "secret";
-
-// insert your discord webhook url here
-$discord_webhook = "URL";
-
-// post to discord snippet from https://www.reddit.com/r/discordapp/comments/58hry5/simple_php_function_for_posting_to_webhook/
-function postToDiscord($message, $discord_webhook) {
-    $data = array("content" => $message, "username" => "Patreon Bot");
-    $curl = curl_init($discord_webhook);
-    curl_setopt($curl, CURLOPT_CUSTOMREQUEST, "POST");
-    curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type:application/json'));
-    curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($data));
-    curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-    
-    $res = curl_exec($curl);
-    return $res;
-}
-
-// compat for older php versions
-if(!function_exists('hash_equals')) {
-    function hash_equals($str1, $str2) {
-        if(strlen($str1) != strlen($str2)) {
-            return false;
-        } else {
-            $res = $str1 ^ $str2;
-            $ret = 0;
-            for($i = strlen($res) - 1; $i >= 0; $i--) $ret |= ord($res[$i]);
-            return !$ret;
-        }
-    }
-}
-
+<?PHP
+//
+// Inspired by: https://github.com/Stonebound/patreon-to-discord-webhooks
+//
+// URL FROM DISCORD WEBHOOK SETUP
+$webhook = "YOURDISCORDWEBHOOKHERE"; 
+$secret_webhook_id = "YOURESECRETWEBHOOKHERE";
 // this saves the post data you get on your endpoint
 $data = @file_get_contents('php://input');
 // decode json post data to arrays
@@ -48,8 +21,8 @@ if (!hash_equals($X_Patreon_Signature, $signature)) {
 }
 
 // get all the user info
-$pledge_amount = $event_data['data']['attributes']['amount_cents'];
-$patron_id     = $event_data['data']['relationships']['patron']['data']['id'];
+$pledge_amount = $event_data['data']['attributes']['pledge_amount_cents'];
+$patron_id     = $event_data['data']['relationships']['user']['data']['id'];
 $campaign_id   = $event_data['data']['relationships']['campaign']['data']['id'];
 
 foreach ($event_data['included'] as $included_data) {
@@ -63,18 +36,61 @@ foreach ($event_data['included'] as $included_data) {
 
 $patron_url = $user_data['attributes']['url'];
 $patron_fullname = $user_data['attributes']['full_name'];
+$patreon_discord = $user_data['attributes']['discord_id'];
 
 $campaign_sum    = $campaign_data['attributes']['pledge_sum'];
 $patron_count    = $campaign_data['attributes']['patron_count'];
 
 // send event to discord
-if ($X_Patreon_Event == "pledges:create") {
-    postToDiscord(":star: " . $patron_fullname . " just pledged for $" . number_format(($pledge_amount /100), 2, '.', ' ') . "! <" . $patron_url . "> - New total: $" . number_format(($campaign_sum / 100), 2, '.', ' ') . " by " . $patron_count . " patreons", $discord_webhook);
-} else if ($X_Patreon_Event == "pledges:delete") {
-    postToDiscord(":disappointed: " . $patron_fullname . " just removed their pledge! <" . $patron_url . "> - New total: $" . number_format(($campaign_sum / 100), 2, '.', ' ') . " by " . $patron_count . " patreons", $discord_webhook);
-} else if ($X_Patreon_Event == "pledges:update") {
-    postToDiscord(":open_mouth: " . $patron_fullname . " just updated their pledge to $" . number_format(($pledge_amount /100), 2, '.', ' ') . "! <" . $patron_url . "> - New total: $" . number_format(($campaign_sum / 100), 2, '.', ' ') . " by " . $patron_count . " patreons", $discord_webhook);
+if ($X_Patreon_Event == "members:create") {
+    $discordmessage = ":star: <@" . $patreon_discord . ">" . " just pledged for $" . number_format(($pledge_amount /100), 2, '.', ' ') . "! - New total: $" . number_format(($campaign_sum / 100), 2, '.', ' ') . " by " . $patron_count . " patreons";
+} else if ($X_Patreon_Event == "members:delete") {
+    $discordmessage = ":disappointed: <@" . $patreon_discord . ">" . " just removed their pledge! - New total: $" . number_format(($campaign_sum / 100), 2, '.', ' ') . " by " . $patron_count . " patreons";
+} else if ($X_Patreon_Event == "members:update") {
+    $discordmessage = ":open_mouth: <@" . $patreon_discord . ">" . " just updated their pledge to $" . number_format(($pledge_amount /100), 2, '.', ' ') . "! - New total: $" . number_format(($campaign_sum / 100), 2, '.', ' ') . " by " . $patron_count . " patreons";
 } else {
-    postToDiscord($X_Patreon_Event . ": something happened with Patreon ¯\_(ツ)_/¯", $discord_webhook);
+    $discordmessage = $X_Patreon_Event . ": something happened with Patreon ¯\_(ツ)_/¯";
 }
+// members:create	        Triggered when a new member is created. Note that you may get more than one of these per patron if they delete and renew their membership. Member creation only occurs if there was no prior payment between patron and creator.
+// members:update	        Triggered when the membership information is changed. Includes updates on payment charging events
+// members:delete	        Triggered when a membership is deleted. Note that you may get more than one of these per patron if they delete and renew their membership. Deletion only occurs if no prior payment happened, otherwise pledge deletion is an update to member status.
+// members:pledge:create	Triggered when a new pledge is created for a member. This includes when a member is created through pledging, and when a follower becomes a patron.
+// members:pledge:update	Triggered when a member updates their pledge.
+// members:pledge:delete	Triggered when a member deletes their pledge.
+// posts:publish	        Triggered when a post is published on a campaign.
+// posts:update	            Triggered when a post is updated on a campaign.
+// posts:delete	            Triggered when a post is deleted on a campaign.
 
+    function discordmsg($msg, $webhook) {
+        if($webhook != "") {
+            $ch = curl_init( $webhook );
+            curl_setopt( $ch, CURLOPT_HTTPHEADER, array('Content-type: application/json'));
+            curl_setopt( $ch, CURLOPT_POST, 1);
+            curl_setopt( $ch, CURLOPT_POSTFIELDS, $msg);
+            curl_setopt( $ch, CURLOPT_FOLLOWLOCATION, 1);
+            curl_setopt( $ch, CURLOPT_HEADER, 0);
+            curl_setopt( $ch, CURLOPT_RETURNTRANSFER, 1);
+ 
+            $response = curl_exec( $ch );
+            // If you need to debug, or find out why you can't send message uncomment line below, and execute script.
+            echo $response;
+            curl_close( $ch );
+        }
+    }
+
+    $timestamp = date("c", strtotime("now"));
+    $msg = json_encode([
+    // Message
+    "content" =>  $discordmessage,
+ 
+    // Username
+    "username" => " Discord-linked Patreon Bot",
+ 
+    // text-to-speech
+    "tts" => false
+	
+], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+ 
+    discordmsg($msg, $webhook); // SENDS MESSAGE TO DISCORD
+    echo "sent?";
+?>
